@@ -1,13 +1,14 @@
 use std::io;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+use crossterm::style::StyledContent;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::Stylize,
+    style::{Color, Style, Stylize},
     symbols::border,
     text::{Line, Text},
-    widgets::{Block, Paragraph, Widget},
+    widgets::{Block, BorderType, Borders, Paragraph, Widget},
     DefaultTerminal, Frame,
 };
 
@@ -28,6 +29,26 @@ impl App {
 
     fn draw(&self, frame: &mut Frame) {
         frame.render_widget(self, frame.area());
+        /*
+        frame.render_widget(Block::bordered().title("Hey"), Rect::new(10, 10, 25, 25));
+        let p = Paragraph::new("Hello, World!")
+            .style(Style::default().fg(Color::Yellow))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Title")
+                    .border_type(BorderType::Rounded),
+            );
+        frame.render_widget(p, Rect::new(40, 10, 20, 20));
+        */
+        let text = vec![
+            Line::from(vec![".".gray(), "@".green()]),
+            Line::from(vec![".".gray(), ".".gray()]),
+        ];
+        frame.render_widget(
+            Paragraph::new(text).block(Block::bordered()),
+            Rect::new(5, 5, 18, 18),
+        );
     }
 
     fn handle_events(&mut self) -> io::Result<()> {
