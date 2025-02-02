@@ -1,6 +1,7 @@
 mod maze;
 
 use std::io;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use crossterm::style::StyledContent;
@@ -22,17 +23,31 @@ pub enum Tile {
     Wall,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct App {
     counter: u8,
     exit: bool,
     field: Vec<Vec<Tile>>,
+    robot_pos: (usize, usize),
+    robot_dir: Direction,
 }
 
 impl App {
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
+        let mut second = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         while !self.exit {
             terminal.draw(|frame| self.draw(frame))?;
+            let new_second = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            if new_second > second {
+                second = new_second;
+                step(self);
+            }
             self.handle_events()?;
         }
         Ok(())
@@ -84,6 +99,81 @@ impl App {
     fn decrement_counter(&mut self) {
         self.counter -= 1;
     }
+
+    fn local_to_global(&self, offset: (isize, isize)) -> (isize, isize) {
+        use Direction as D;
+        match self.robot_dir {
+            D::N => offset,
+            D::E => (-offset.1, offset.0),
+            D::S => (-offset.0, -offset.1),
+            D::W => (offset.1, -offset.0),
+        }
+    }
+
+    fn global_to_local(&self, offset: (isize, isize)) -> (isize, isize) {
+        use Direction as D;
+        match self.robot_dir {
+            D::N => offset,
+            D::E => (offset.1, -offset.0),
+            D::S => (-offset.0, -offset.1),
+            D::W => (-offset.1, offset.0),
+        }
+    }
+
+    fn robot_scan(&mut self) -> [u8; 9] {
+        let mut arr = [0u8; 9];
+        let mut idx = 0;
+        for y_loc in -1..=1 {
+            for x_loc in -1..=1 {
+                let (xoff_glob, yoff_glob) = self.local_to_global((x_loc, y_loc));
+                let (x_glob, y_glob): (usize, usize) = (
+                    (self.robot_pos.0 as isize + xoff_glob).try_into().unwrap(),
+                    (self.robot_pos.1 as isize + yoff_glob).try_into().unwrap(),
+                );
+                arr[idx] = match self.field[y_glob][x_glob] {
+                    Tile::Free => b'.',
+                    Tile::Wall => b'O',
+                };
+                idx += 1;
+            }
+        }
+        arr
+    }
+
+    fn robot_step(&mut self) {
+        let (xoff_glob, yoff_glob) = self.local_to_global((0, -1));
+        let (x_glob, y_glob): (usize, usize) = (
+            (self.robot_pos.0 as isize + xoff_glob).try_into().unwrap(),
+            (self.robot_pos.1 as isize + yoff_glob).try_into().unwrap(),
+        );
+        // can only step into free fields
+        match self.field[y_glob][x_glob] {
+            Tile::Free => {
+                self.robot_pos = (x_glob, y_glob);
+            }
+            Tile::Wall => panic!("robot tried to move to wall at ({}, {})", x_glob, y_glob),
+        }
+    }
+
+    fn robot_turn_right(&mut self) {
+        use Direction as D;
+        self.robot_dir = match self.robot_dir {
+            D::N => D::E,
+            D::E => D::S,
+            D::S => D::W,
+            D::W => D::N,
+        }
+    }
+
+    fn robot_turn_left(&mut self) {
+        use Direction as D;
+        self.robot_dir = match self.robot_dir {
+            D::N => D::W,
+            D::E => D::N,
+            D::S => D::E,
+            D::W => D::S,
+        }
+    }
 }
 
 impl Widget for &App {
@@ -113,6 +203,30 @@ impl Widget for &App {
 
         let x = self.field[0].len();
         let y = self.field.len();
+        let mut cx = 0;
+        let mut cy = 0;
+        let mut text: Vec<Line> = Vec::new();
+
+        #[allow(clippy::explicit_counter_loop)]
+        for line in &self.field {
+            let mut linevec: Vec<Span> = Vec::new();
+            for tile in line {
+                linevec.push(if (cx, cy) == self.robot_pos {
+                    "@".green().bold()
+                } else {
+                    match tile {
+                        Tile::Free => ".".dark_gray(),
+                        Tile::Wall => "O".white(),
+                    }
+                });
+                cx += 1;
+            }
+            text.push(linevec.into());
+            cx = 0;
+            cy += 1;
+        }
+
+        /*
         let text = self
             .field
             .iter()
@@ -126,6 +240,7 @@ impl Widget for &App {
                     .into()
             })
             .collect::<Vec<Line>>();
+        */
 
         Paragraph::new(text)
             .block(Block::bordered())
@@ -153,8 +268,32 @@ fn main() -> io::Result<()> {
                     .collect()
             })
             .collect(),
+        robot_pos: (1, 1),
+        robot_dir: Direction::E,
     };
     let app_result = app.run(&mut terminal);
     ratatui::restore();
     app_result
+}
+
+#[derive(Debug)]
+enum Direction {
+    N,
+    E,
+    S,
+    W,
+}
+
+fn step(app: &mut App) {
+    let scan = app.robot_scan();
+    let right = scan[5];
+    let front = scan[1];
+    if right == b'.' {
+        app.robot_turn_right();
+        app.robot_step();
+    } else if front == b'.' {
+        app.robot_step();
+    } else {
+        app.robot_turn_left()
+    }
 }
