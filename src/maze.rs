@@ -65,7 +65,7 @@ pub enum Tile {
 }
 
 pub struct Maze {
-    tiles: Vec<Vec<Tile>>,
+    pub tiles: Vec<Vec<Tile>>,
 }
 
 #[derive(Copy, Clone, Debug)]

@@ -5,6 +5,7 @@ use std::io;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use crossterm::style::StyledContent;
 use maze::Maze;
+use ratatui::text::Span;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -110,55 +111,48 @@ impl Widget for &App {
             .block(block)
             .render(area, buf);
 
-        let text = vec![
-            Line::from(Vec::from_iter(self.field[0].iter().copied().map(
-                |tile| match tile {
-                    Tile::Free => ".".dark_gray(),
-                    Tile::Wall => "O".white(),
-                },
-            ))),
-            Line::from(Vec::from_iter(self.field[1].iter().copied().map(
-                |tile| match tile {
-                    Tile::Free => ".".dark_gray(),
-                    Tile::Wall => "O".white(),
-                },
-            ))),
-        ];
+        let x = self.field[0].len();
+        let y = self.field.len();
+        let text = self
+            .field
+            .iter()
+            .map(|line| {
+                line.iter()
+                    .map(|tile| match tile {
+                        Tile::Free => ".".dark_gray(),
+                        Tile::Wall => "O".white(),
+                    })
+                    .collect::<Vec<Span>>()
+                    .into()
+            })
+            .collect::<Vec<Line>>();
+
         Paragraph::new(text)
             .block(Block::bordered())
-            .render(Rect::new(4, 4, 18, 18), buf);
+            .render(Rect::new(2, 2, (x + 2) as u16, (y + 2) as u16), buf);
     }
 }
 
 fn main() -> io::Result<()> {
     let maze = Maze::kruskal(16, 8);
-    println!("{}", maze);
-    return Ok(());
+    // println!("{}", maze);
+    // return Ok(());
     let mut terminal = ratatui::init();
     let mut app = App {
         counter: 0,
         exit: false,
-        field: vec![
-            vec![
-                Tile::Free,
-                Tile::Free,
-                Tile::Wall,
-                Tile::Wall,
-                Tile::Free,
-                Tile::Free,
-                Tile::Free,
-                Tile::Wall,
-                Tile::Wall,
-                Tile::Free,
-                Tile::Free,
-                Tile::Free,
-                Tile::Wall,
-                Tile::Wall,
-                Tile::Free,
-                Tile::Wall,
-            ],
-            vec![Tile::Free; 16],
-        ],
+        field: maze
+            .tiles
+            .iter()
+            .map(|line| {
+                line.iter()
+                    .map(|tile| match tile {
+                        maze::Tile::Free => Tile::Free,
+                        maze::Tile::Wall => Tile::Wall,
+                    })
+                    .collect()
+            })
+            .collect(),
     };
     let app_result = app.run(&mut terminal);
     ratatui::restore();
