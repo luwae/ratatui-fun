@@ -1,7 +1,7 @@
 mod maze;
 
 use std::io;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use crossterm::style::StyledContent;
@@ -34,21 +34,17 @@ pub struct App {
 
 impl App {
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
-        let mut second = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        let tick_rate = Duration::from_millis(100);
+        let mut last_tick = Instant::now();
         while !self.exit {
             terminal.draw(|frame| self.draw(frame))?;
-            let new_second = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
-            if new_second > second {
-                second = new_second;
-                step(self);
+            let timeout = tick_rate.saturating_sub(last_tick.elapsed());
+            self.handle_events(timeout)?;
+
+            if last_tick.elapsed() >= tick_rate {
+                on_tick(self);
+                last_tick = Instant::now();
             }
-            self.handle_events()?;
         }
         Ok(())
     }
@@ -69,12 +65,14 @@ impl App {
         */
     }
 
-    fn handle_events(&mut self) -> io::Result<()> {
-        match event::read()? {
-            Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                self.handle_key_event(key_event)
+    fn handle_events(&mut self, timeout: Duration) -> io::Result<()> {
+        if event::poll(timeout)? {
+            match event::read()? {
+                Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                    self.handle_key_event(key_event)
+                }
+                _ => {}
             }
-            _ => {}
         }
         Ok(())
     }
@@ -284,7 +282,7 @@ enum Direction {
     W,
 }
 
-fn step(app: &mut App) {
+fn on_tick(app: &mut App) {
     let scan = app.robot_scan();
     let right = scan[5];
     let front = scan[1];
