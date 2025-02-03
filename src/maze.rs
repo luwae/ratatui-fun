@@ -1,6 +1,6 @@
 use std::fmt;
 
-use rand::seq::SliceRandom;
+use rand::{seq::SliceRandom, Rng, RngCore};
 
 #[derive(Debug)]
 struct UnionFind {
@@ -114,9 +114,9 @@ impl Maze {
             }
         }
         edges.shuffle(&mut rand::rng());
-        println!("{:?}", edges);
 
         let mut sets = UnionFind::new(nx * ny);
+        let mut unused_edges = Vec::new();
 
         for edge in edges {
             let (pos_a, pos_b) = if is_horizontal_edge(edge) {
@@ -128,8 +128,27 @@ impl Maze {
             if !sets.in_same_set(index_a, index_b) {
                 sets.join(index_a, index_b);
                 maze.tiles[edge.1][edge.0] = Tile::Free;
-                println!("{}", maze);
-                println!("{}", sets);
+            } else {
+                unused_edges.push(edge);
+            }
+        }
+
+        /*
+        // remove some random edges taht are still standing
+        unused_edges.shuffle(&mut rand::rng());
+        let n = (nx * ny) / 2;
+        for edge in &unused_edges[..n] {
+            maze.tiles[edge.1][edge.0] = Tile::Free;
+        }
+        */
+        // remove random Wall tiles
+        let mut to_remove = 0; // (nx * ny) / 2;
+        while to_remove > 0 {
+            let x = rand::rng().random_range(1..(nx * 2));
+            let y = rand::rng().random_range(1..(ny * 2));
+            if let Tile::Wall = maze.tiles[y][x] {
+                maze.tiles[y][x] = Tile::Free;
+                to_remove -= 1;
             }
         }
 
