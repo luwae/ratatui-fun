@@ -133,16 +133,15 @@ impl Maze {
             }
         }
 
-        /*
         // remove some random edges taht are still standing
         unused_edges.shuffle(&mut rand::rng());
         let n = (nx * ny) / 2;
         for edge in &unused_edges[..n] {
             maze.tiles[edge.1][edge.0] = Tile::Free;
         }
-        */
+        /*
         // remove random Wall tiles
-        let mut to_remove = 0; // (nx * ny) / 2;
+        let mut to_remove = (nx * ny) / 1;
         while to_remove > 0 {
             let x = rand::rng().random_range(1..(nx * 2));
             let y = rand::rng().random_range(1..(ny * 2));
@@ -151,6 +150,7 @@ impl Maze {
                 to_remove -= 1;
             }
         }
+        */
 
         maze
     }
