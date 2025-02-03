@@ -36,6 +36,26 @@ pub struct App {
 }
 
 impl App {
+    fn init(&mut self) {
+        let maze = Maze::kruskal(16, 16);
+        self.field = maze
+            .tiles
+            .iter()
+            .map(|line| {
+                line.iter()
+                    .map(|tile| match tile {
+                        maze::Tile::Free => Tile::Free,
+                        maze::Tile::Wall => Tile::Wall,
+                    })
+                    .collect()
+            })
+            .collect();
+        self.robot_pos = (1, 1);
+        self.robot_dir = Direction::E;
+        self.robot_stack = Vec::new();
+        self.robot_visited = vec![self.robot_pos];
+    }
+
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         let tick_rate = Duration::from_millis(20);
         let mut last_tick = Instant::now();
@@ -45,7 +65,10 @@ impl App {
             self.handle_events(timeout)?;
 
             if last_tick.elapsed() >= tick_rate {
-                self.on_tick();
+                let done = self.on_tick();
+                if done {
+                    self.init();
+                }
                 last_tick = Instant::now();
             }
         }
@@ -176,7 +199,7 @@ impl App {
         }
     }
 
-    fn on_tick(&mut self) {
+    fn on_tick(&mut self) -> bool {
         let scan = self.robot_scan();
         let right = scan[5];
         let front = scan[1];
@@ -201,12 +224,16 @@ impl App {
             self.robot_step();
         } else {
             // backtrack
-            let back = self.robot_stack.pop().unwrap();
+            let back = match self.robot_stack.pop() {
+                Some(it) => it,
+                None => return true,
+            };
             while back != self.as_seen_from_robot((0, -1)) {
                 self.robot_turn_right();
             }
             self.robot_step();
         }
+        false
     }
 }
 
@@ -272,30 +299,19 @@ impl Widget for &App {
 }
 
 fn main() -> io::Result<()> {
-    let maze = Maze::kruskal(16, 16);
     // println!("{}", maze);
     // return Ok(());
     let mut terminal = ratatui::init();
     let mut app = App {
         counter: 0,
         exit: false,
-        field: maze
-            .tiles
-            .iter()
-            .map(|line| {
-                line.iter()
-                    .map(|tile| match tile {
-                        maze::Tile::Free => Tile::Free,
-                        maze::Tile::Wall => Tile::Wall,
-                    })
-                    .collect()
-            })
-            .collect(),
+        field: Vec::new(),
         robot_pos: (1, 1),
         robot_dir: Direction::E,
         robot_stack: Vec::new(),
         robot_visited: Vec::new(),
     };
+    app.init();
     let app_result = app.run(&mut terminal);
     ratatui::restore();
     app_result
