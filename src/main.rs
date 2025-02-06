@@ -67,10 +67,11 @@ pub struct App {
 impl App {
     fn reinit(&mut self) {
         let (w, h) = (16, 16);
+        let (pw, ph) = (2 * w + 1, 2 * h + 1);
         let maze = Maze::kruskal(w, h);
-        let mut map = TileMap::with_size((2 * w + 1) as u16, (2 * h + 1) as u16);
-        for cy in 0..h {
-            for cx in 0..w {
+        let mut map = TileMap::with_size(pw as u16, ph as u16);
+        for cy in 0..ph {
+            for cx in 0..pw {
                 *map.get_mut(cx as u16, cy as u16).unwrap() = match maze.tiles[cy][cx] {
                     maze::Tile::Free => MyTile::Free,
                     maze::Tile::Wall => MyTile::Wall,
@@ -95,7 +96,7 @@ impl App {
         Ok(())
     }
 
-    fn draw(&self, frame: &mut Frame) {
+    fn draw(&mut self, frame: &mut Frame) {
         frame.render_widget(self, frame.area());
     }
 
@@ -147,10 +148,10 @@ impl App {
         let glob = self.robot_pos_with_offset((0, -1)).unwrap();
         // can only step into free fields
         match self.map.get(glob.x as u16, glob.y as u16).unwrap() {
-            MyTile::Free => {
+            MyTile::Wall | MyTile::Robot => panic!("robot tried to move to non-free {}", glob),
+            MyTile::Free | MyTile::Visited | MyTile::Stack => {
                 self.robot_pos = glob;
             }
-            _ => panic!("robot tried to move to non-free {}", glob),
         }
     }
 
@@ -208,13 +209,23 @@ impl App {
     }
 }
 
-impl Widget for &App {
+impl Widget for &mut App {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let layout = Layout::default()
             .direction(ratatui::layout::Direction::Horizontal)
             .constraints(vec![Constraint::Ratio(1, 3), Constraint::Ratio(2, 3)])
             .split(area);
 
+        for pos in &self.robot_visited {
+            *self.map.get_mut(pos.x as u16, pos.y as u16).unwrap() = MyTile::Visited;
+        }
+        for pos in &self.robot_stack {
+            *self.map.get_mut(pos.x as u16, pos.y as u16).unwrap() = MyTile::Stack;
+        }
+        *self
+            .map
+            .get_mut(self.robot_pos.x as u16, self.robot_pos.y as u16)
+            .unwrap() = MyTile::Robot;
         self.map.render(layout[1], buf);
     }
 }
