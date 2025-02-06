@@ -1,6 +1,10 @@
 mod debug;
 use debug::{debug_print, debug_println};
 mod maze;
+mod tile;
+use ratatui::layout::Constraint;
+use ratatui::layout::Layout;
+use tile::TileMap;
 
 use std::fmt;
 use std::fs;
@@ -28,10 +32,32 @@ pub enum Tile {
     Wall,
 }
 
+#[derive(Debug, Default, Copy, Clone)]
+pub enum MyTile {
+    #[default]
+    Free,
+    Wall,
+    Visited,
+    Stack,
+    Robot,
+}
+
+impl From<MyTile> for ratatui::style::Color {
+    fn from(value: MyTile) -> Self {
+        match value {
+            MyTile::Free => Color::Black,
+            MyTile::Wall => Color::DarkGray,
+            MyTile::Visited => Color::Blue,
+            MyTile::Stack => Color::Yellow,
+            MyTile::Robot => Color::Green,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct App {
     exit: bool,
-    field: Vec<Vec<Tile>>,
+    map: TileMap<MyTile>,
     robot_pos: Pos,
     robot_dir: Direction,
     robot_stack: Vec<Pos>,
@@ -40,19 +66,18 @@ pub struct App {
 
 impl App {
     fn reinit(&mut self) {
-        let maze = Maze::kruskal(16, 16);
-        self.field = maze
-            .tiles
-            .iter()
-            .map(|line| {
-                line.iter()
-                    .map(|tile| match tile {
-                        maze::Tile::Free => Tile::Free,
-                        maze::Tile::Wall => Tile::Wall,
-                    })
-                    .collect()
-            })
-            .collect();
+        let (w, h) = (16, 16);
+        let maze = Maze::kruskal(w, h);
+        let mut map = TileMap::with_size((2 * w + 1) as u16, (2 * h + 1) as u16);
+        for cy in 0..h {
+            for cx in 0..w {
+                *map.get_mut(cx as u16, cy as u16).unwrap() = match maze.tiles[cy][cx] {
+                    maze::Tile::Free => MyTile::Free,
+                    maze::Tile::Wall => MyTile::Wall,
+                };
+            }
+        }
+        self.map = map;
         self.robot_pos = Pos::new(1, 1);
         self.robot_dir = Direction::E;
         self.robot_stack = Vec::new();
@@ -108,9 +133,9 @@ impl App {
         for y_loc in -1..=1 {
             for x_loc in -1..=1 {
                 let glob = self.robot_pos_with_offset((x_loc, y_loc)).unwrap();
-                arr[idx] = match self.field[glob.y][glob.x] {
-                    Tile::Free => b'.',
-                    Tile::Wall => b'O',
+                arr[idx] = match self.map.get(glob.x as u16, glob.y as u16).unwrap() {
+                    MyTile::Free => b'.',
+                    _ => b'O',
                 };
                 idx += 1;
             }
@@ -121,11 +146,11 @@ impl App {
     fn robot_step(&mut self) {
         let glob = self.robot_pos_with_offset((0, -1)).unwrap();
         // can only step into free fields
-        match self.field[glob.y][glob.x] {
-            Tile::Free => {
+        match self.map.get(glob.x as u16, glob.y as u16).unwrap() {
+            MyTile::Free => {
                 self.robot_pos = glob;
             }
-            Tile::Wall => panic!("robot tried to move to wall at {}", glob),
+            _ => panic!("robot tried to move to non-free {}", glob),
         }
     }
 
@@ -181,44 +206,16 @@ impl App {
             self.robot_step();
         }
     }
-
-    fn draw_bg(&self, buf: &mut Buffer, pos: Pos, color: Color) {
-        buf[ratatui::layout::Position {
-            x: (2 * pos.x) as u16,
-            y: pos.y as u16,
-        }]
-        .set_bg(color);
-        buf[ratatui::layout::Position {
-            x: (2 * pos.x + 1) as u16,
-            y: pos.y as u16,
-        }]
-        .set_bg(color);
-    }
 }
 
 impl Widget for &App {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        for cy in 0..self.field.len() {
-            for cx in 0..self.field[0].len() {
-                self.draw_bg(
-                    buf,
-                    Pos::new(cx, cy),
-                    match self.field[cy][cx] {
-                        Tile::Free => Color::Black,
-                        Tile::Wall => Color::DarkGray,
-                    },
-                );
-            }
-        }
+        let layout = Layout::default()
+            .direction(ratatui::layout::Direction::Horizontal)
+            .constraints(vec![Constraint::Ratio(1, 3), Constraint::Ratio(2, 3)])
+            .split(area);
 
-        for pos in self.robot_visited.iter().copied() {
-            self.draw_bg(buf, pos, Color::Blue);
-        }
-        for pos in self.robot_stack.iter().copied() {
-            self.draw_bg(buf, pos, Color::Yellow);
-        }
-
-        self.draw_bg(buf, self.robot_pos, Color::Green);
+        self.map.render(layout[1], buf);
     }
 }
 
@@ -228,7 +225,7 @@ fn main() -> io::Result<()> {
     let mut terminal = ratatui::init();
     let mut app = App {
         exit: false,
-        field: Vec::new(),
+        map: TileMap::with_size(1, 1), // this gets reinit()ed anyways
         robot_pos: Pos::new(1, 1),
         robot_dir: Direction::E,
         robot_stack: Vec::new(),
