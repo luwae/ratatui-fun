@@ -48,15 +48,8 @@ impl<T> ops::IndexMut<(u16, u16)> for TileMap<T> {
     }
 }
 
-// const ARR_RIGHT: char = '⮕';
-// const ARR_DOWN: char = '⬇';
-// const ARR_DOWNRIGHT: char = '⬊';
-// const ARR_RIGHT: char = '>';
-// const ARR_DOWN: char = 'V';
-// const ARR_DOWNRIGHT: char = '\\';
-const ARR_RIGHT: char = ' ';
-const ARR_DOWN: char = ' ';
-const ARR_DOWNRIGHT: char = ' ';
+const ARR_RIGHT: char = '⮕';
+const ARR_DOWN: char = '⬇';
 
 impl<T> ratatui::widgets::Widget for &TileMap<T>
 where
@@ -76,29 +69,40 @@ where
                     .map(|cell| cell.set_bg(tile.into()));
             }
         }
-        if area.width < 2 * self.width {
+        let (small_x, small_y) = (area.width < 2 * self.width, area.height < self.height);
+        if small_x {
             for y in area.top()..area.bottom() {
                 buf[(area.right() - 2, y)]
                     .set_bg(Color::White)
                     .set_fg(Color::Black)
-                    .set_char('-');
+                    .set_char(ARR_RIGHT);
                 buf[(area.right() - 1, y)]
                     .set_bg(Color::White)
                     .set_fg(Color::Black)
-                    .set_char('>');
+                    .set_char(' ');
             }
         }
-        if area.height < self.height {
+        if small_y {
             for x in area.left()..area.right() {
                 buf[(x, area.bottom() - 1)]
                     .set_bg(Color::White)
                     .set_fg(Color::Black)
-                    .set_char(if (x - area.left()) % 2 == 0 && x < area.right() - 2 {
-                        'V'
+                    .set_char(if (x - area.left()) % 2 == 0 {
+                        ARR_DOWN
                     } else {
                         ' '
                     });
             }
+        }
+        if small_x && small_y {
+            buf[(area.right() - 2, area.bottom() - 1)]
+                .set_bg(Color::White)
+                .set_fg(Color::Black)
+                .set_char(' ');
+            buf[(area.right() - 1, area.bottom() - 1)]
+                .set_bg(Color::White)
+                .set_fg(Color::Black)
+                .set_char(' ');
         }
     }
 }
