@@ -48,6 +48,16 @@ impl<T> ops::IndexMut<(u16, u16)> for TileMap<T> {
     }
 }
 
+// const ARR_RIGHT: char = '⮕';
+// const ARR_DOWN: char = '⬇';
+// const ARR_DOWNRIGHT: char = '⬊';
+// const ARR_RIGHT: char = '>';
+// const ARR_DOWN: char = 'V';
+// const ARR_DOWNRIGHT: char = '\\';
+const ARR_RIGHT: char = ' ';
+const ARR_DOWN: char = ' ';
+const ARR_DOWNRIGHT: char = ' ';
+
 impl<T> ratatui::widgets::Widget for &TileMap<T>
 where
     for<'a> &'a T: Into<Color>,
@@ -56,19 +66,38 @@ where
     where
         Self: Sized,
     {
-        if area.width >= 2 * self.width && area.height >= self.height {
-            for cy in 0..self.height {
-                for cx in 0..self.width {
-                    let tile = &self[(cx, cy)];
-                    buf[(area.x + 2 * cx, area.y + cy)].set_bg(tile.into());
-                    buf[(area.x + 2 * cx + 1, area.y + cy)].set_bg(tile.into());
-                }
+        for cy in 0..self.height {
+            for cx in 0..self.width {
+                let tile = &self[(cx, cy)];
+                // TODO maybe prettier with an if let
+                buf.cell_mut((area.x + 2 * cx, area.y + cy))
+                    .map(|cell| cell.set_bg(tile.into()));
+                buf.cell_mut((area.x + 2 * cx + 1, area.y + cy))
+                    .map(|cell| cell.set_bg(tile.into()));
             }
-        } else {
-            for cy in 0..area.height {
-                for cx in 0..area.width {
-                    buf[(area.x + cx, area.y + cy)].set_bg(Color::Red);
-                }
+        }
+        if area.width < 2 * self.width {
+            for y in area.top()..area.bottom() {
+                buf[(area.right() - 2, y)]
+                    .set_bg(Color::White)
+                    .set_fg(Color::Black)
+                    .set_char('-');
+                buf[(area.right() - 1, y)]
+                    .set_bg(Color::White)
+                    .set_fg(Color::Black)
+                    .set_char('>');
+            }
+        }
+        if area.height < self.height {
+            for x in area.left()..area.right() {
+                buf[(x, area.bottom() - 1)]
+                    .set_bg(Color::White)
+                    .set_fg(Color::Black)
+                    .set_char(if (x - area.left()) % 2 == 0 && x < area.right() - 2 {
+                        'V'
+                    } else {
+                        ' '
+                    });
             }
         }
     }
@@ -108,19 +137,14 @@ where
     where
         Self: Sized,
     {
-        if area.width >= 2 * self.0.width && area.height >= self.0.height {
-            for cy in 0..self.0.height {
-                for cx in 0..self.0.width {
-                    if let Some(tile) = &self[(cx, cy)] {
-                        buf[(area.x + 2 * cx, area.y + cy)].set_bg(tile.into());
-                        buf[(area.x + 2 * cx + 1, area.y + cy)].set_bg(tile.into());
-                    }
-                }
-            }
-        } else {
-            for cy in 0..area.height {
-                for cx in 0..area.width {
-                    buf[(area.x + cx, area.y + cy)].set_bg(Color::Red);
+        for cy in 0..self.0.height {
+            for cx in 0..self.0.width {
+                if let Some(tile) = &self[(cx, cy)] {
+                    // TODO maybe prettier with an if let
+                    buf.cell_mut((area.x + 2 * cx, area.y + cy))
+                        .map(|cell| cell.set_bg(tile.into()));
+                    buf.cell_mut((area.x + 2 * cx + 1, area.y + cy))
+                        .map(|cell| cell.set_bg(tile.into()));
                 }
             }
         }
