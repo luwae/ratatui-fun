@@ -214,23 +214,35 @@ impl App {
         let left_coords = self.robot_pos_with_offset((-1, 0)).unwrap();
         let right_coords = self.robot_pos_with_offset((1, 0)).unwrap();
 
-        if front == b'.' && self.layer_visited[front_coords.into()].is_none() {
-            debug_println("move front".to_string());
-            self.layer_visited[front_coords.into()] = Some(VisitedTile::Visited);
-            self.robot_stack_push(self.robot_pos);
-            self.robot_step();
-        } else if right == b'.' && self.layer_visited[right_coords.into()].is_none() {
-            debug_println("move right".to_string());
-            self.layer_visited[right_coords.into()] = Some(VisitedTile::Visited);
-            self.robot_stack_push(self.robot_pos);
-            self.robot_turn_right();
-            self.robot_step();
-        } else if left == b'.' && self.layer_visited[left_coords.into()].is_none() {
-            debug_println("move left".to_string());
-            self.layer_visited[left_coords.into()] = Some(VisitedTile::Visited);
-            self.robot_stack_push(self.robot_pos);
-            self.robot_turn_left();
-            self.robot_step();
+        let free = [
+            front == b'.' && self.layer_visited[front_coords.into()].is_none(),
+            right == b'.' && self.layer_visited[right_coords.into()].is_none(),
+            left == b'.' && self.layer_visited[left_coords.into()].is_none(),
+        ];
+        if free[0] || free[1] || free[2] {
+            match select_idx(&free[..]) {
+                0 => {
+                    debug_println("move front".to_string());
+                    self.layer_visited[front_coords.into()] = Some(VisitedTile::Visited);
+                    self.robot_stack_push(self.robot_pos);
+                    self.robot_step();
+                }
+                1 => {
+                    debug_println("move right".to_string());
+                    self.layer_visited[right_coords.into()] = Some(VisitedTile::Visited);
+                    self.robot_stack_push(self.robot_pos);
+                    self.robot_turn_right();
+                    self.robot_step();
+                }
+                2 => {
+                    debug_println("move left".to_string());
+                    self.layer_visited[left_coords.into()] = Some(VisitedTile::Visited);
+                    self.robot_stack_push(self.robot_pos);
+                    self.robot_turn_left();
+                    self.robot_step();
+                }
+                _ => unreachable!(),
+            }
         } else {
             debug_println("backtrack".to_string());
             // backtrack
@@ -246,6 +258,25 @@ impl App {
             }
             self.robot_step();
         }
+    }
+}
+
+fn select_idx(values: &[bool]) -> usize {
+    let ntrue = values.iter().copied().filter(|t| *t).count();
+    if ntrue == 0 {
+        panic!("ntrue == 0");
+    }
+    let n = rand::random_range(0..ntrue);
+    let mut m = 0;
+    let mut idx = 0;
+    loop {
+        if values[idx] {
+            if n == m {
+                break idx;
+            }
+            m += 1;
+        }
+        idx += 1;
     }
 }
 
