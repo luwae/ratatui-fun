@@ -106,12 +106,9 @@ impl App {
     }
 
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
-        let tick_rate = Duration::from_millis(100);
-        let mut last_tick = Instant::now();
         while !self.exit {
             terminal.draw(|frame| self.draw(frame))?;
-            let timeout = tick_rate.saturating_sub(last_tick.elapsed());
-            self.handle_events(timeout)?;
+            self.handle_events()?;
         }
         Ok(())
     }
@@ -120,7 +117,8 @@ impl App {
         frame.render_widget(self, frame.area());
     }
 
-    fn handle_events(&mut self, timeout: Duration) -> io::Result<()> {
+    fn handle_events(&mut self) -> io::Result<()> {
+        let timeout = Duration::from_millis(1000 / 60);
         if event::poll(timeout)? {
             match event::read()? {
                 Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
