@@ -4,7 +4,7 @@ mod maze;
 mod tile;
 use ratatui::layout::Constraint;
 use ratatui::layout::Layout;
-use tile::TileMap;
+use tile::{AlphaTileMap, TileMap};
 
 use std::fmt;
 use std::fs;
@@ -26,30 +26,46 @@ use ratatui::{
     DefaultTerminal, Frame,
 };
 
-#[derive(Debug, Copy, Clone)]
-pub enum Tile {
+#[derive(Debug, Default, Copy, Clone)]
+pub enum BackgroundTile {
+    #[default]
     Free,
     Wall,
 }
 
+impl From<&BackgroundTile> for ratatui::style::Color {
+    fn from(value: &BackgroundTile) -> Self {
+        match value {
+            BackgroundTile::Free => Color::Black,
+            BackgroundTile::Wall => Color::DarkGray,
+        }
+    }
+}
+
 #[derive(Debug, Default, Copy, Clone)]
-pub enum MyTile {
+pub enum VisitedTile {
     #[default]
-    Free,
-    Wall,
     Visited,
+}
+
+impl From<&VisitedTile> for ratatui::style::Color {
+    fn from(_value: &VisitedTile) -> Self {
+        Color::Blue
+    }
+}
+
+#[derive(Debug, Default, Copy, Clone)]
+pub enum ForegroundTile {
+    #[default]
     Stack,
     Robot,
 }
 
-impl From<MyTile> for ratatui::style::Color {
-    fn from(value: MyTile) -> Self {
+impl From<&ForegroundTile> for ratatui::style::Color {
+    fn from(value: &ForegroundTile) -> Self {
         match value {
-            MyTile::Free => Color::Black,
-            MyTile::Wall => Color::DarkGray,
-            MyTile::Visited => Color::Blue,
-            MyTile::Stack => Color::Yellow,
-            MyTile::Robot => Color::Green,
+            ForegroundTile::Stack => Color::Yellow,
+            ForegroundTile::Robot => Color::Green,
         }
     }
 }
@@ -57,11 +73,12 @@ impl From<MyTile> for ratatui::style::Color {
 #[derive(Debug)]
 pub struct App {
     exit: bool,
-    map: TileMap<MyTile>,
+    layer_bg: TileMap<BackgroundTile>,
+    layer_visited: AlphaTileMap<VisitedTile>,
+    layer_fg: AlphaTileMap<ForegroundTile>,
     robot_pos: Pos,
     robot_dir: Direction,
     robot_stack: Vec<Pos>,
-    robot_visited: Vec<Pos>,
 }
 
 impl App {
@@ -69,20 +86,23 @@ impl App {
         let (w, h) = (16, 16);
         let (pw, ph) = (2 * w + 1, 2 * h + 1);
         let maze = Maze::kruskal(w, h);
-        let mut map = TileMap::with_size(pw as u16, ph as u16);
+        let mut map = TileMap::with_default(pw as u16, ph as u16);
         for cy in 0..ph {
             for cx in 0..pw {
-                *map.get_mut(cx as u16, cy as u16).unwrap() = match maze.tiles[cy][cx] {
-                    maze::Tile::Free => MyTile::Free,
-                    maze::Tile::Wall => MyTile::Wall,
+                map[Pos::new(cx, cy).into()] = match maze.tiles[cy][cx] {
+                    maze::Tile::Free => BackgroundTile::Free,
+                    maze::Tile::Wall => BackgroundTile::Wall,
                 };
             }
         }
-        self.map = map;
+        self.layer_bg = map;
+        self.layer_visited = AlphaTileMap::empty(pw as u16, ph as u16);
+        self.layer_visited[(1, 1)] = Some(VisitedTile::Visited);
+        self.layer_fg = AlphaTileMap::empty(pw as u16, ph as u16);
+        self.layer_fg[(1, 1)] = Some(ForegroundTile::Robot);
         self.robot_pos = Pos::new(1, 1);
         self.robot_dir = Direction::E;
         self.robot_stack = Vec::new();
-        self.robot_visited = vec![self.robot_pos];
     }
 
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
@@ -134,9 +154,9 @@ impl App {
         for y_loc in -1..=1 {
             for x_loc in -1..=1 {
                 let glob = self.robot_pos_with_offset((x_loc, y_loc)).unwrap();
-                arr[idx] = match self.map.get(glob.x as u16, glob.y as u16).unwrap() {
-                    MyTile::Free => b'.',
-                    _ => b'O',
+                arr[idx] = match self.layer_bg[glob.into()] {
+                    BackgroundTile::Free => b'.',
+                    BackgroundTile::Wall => b'O',
                 };
                 idx += 1;
             }
@@ -147,11 +167,31 @@ impl App {
     fn robot_step(&mut self) {
         let glob = self.robot_pos_with_offset((0, -1)).unwrap();
         // can only step into free fields
-        match self.map.get(glob.x as u16, glob.y as u16).unwrap() {
-            MyTile::Wall | MyTile::Robot => panic!("robot tried to move to non-free {}", glob),
-            MyTile::Free | MyTile::Visited | MyTile::Stack => {
+        match self.layer_bg[glob.into()] {
+            BackgroundTile::Free => {
+                if let Some(ForegroundTile::Robot) = self.layer_fg[self.robot_pos.into()] {
+                    self.layer_fg[self.robot_pos.into()] = None;
+                }
                 self.robot_pos = glob;
+                self.layer_fg[self.robot_pos.into()] = Some(ForegroundTile::Robot);
             }
+            BackgroundTile::Wall => panic!("robot tried to move to wall at {}", glob),
+        }
+    }
+
+    fn robot_stack_push(&mut self, pos: Pos) {
+        self.robot_stack.push(pos);
+        self.layer_fg[pos.into()] = Some(ForegroundTile::Stack);
+    }
+
+    fn robot_stack_pop(&mut self) -> Option<Pos> {
+        if let Some(pos) = self.robot_stack.pop() {
+            if let Some(ForegroundTile::Stack) = self.layer_fg[pos.into()] {
+                self.layer_fg[pos.into()] = None;
+            }
+            Some(pos)
+        } else {
+            None
         }
     }
 
@@ -174,27 +214,27 @@ impl App {
         let left_coords = self.robot_pos_with_offset((-1, 0)).unwrap();
         let right_coords = self.robot_pos_with_offset((1, 0)).unwrap();
 
-        if front == b'.' && !self.robot_visited.contains(&front_coords) {
+        if front == b'.' && self.layer_visited[front_coords.into()].is_none() {
             debug_println("move front".to_string());
-            self.robot_stack.push(self.robot_pos);
-            self.robot_visited.push(front_coords);
+            self.layer_visited[front_coords.into()] = Some(VisitedTile::Visited);
+            self.robot_stack_push(self.robot_pos);
             self.robot_step();
-        } else if right == b'.' && !self.robot_visited.contains(&right_coords) {
+        } else if right == b'.' && self.layer_visited[right_coords.into()].is_none() {
             debug_println("move right".to_string());
-            self.robot_stack.push(self.robot_pos);
-            self.robot_visited.push(right_coords);
+            self.layer_visited[right_coords.into()] = Some(VisitedTile::Visited);
+            self.robot_stack_push(self.robot_pos);
             self.robot_turn_right();
             self.robot_step();
-        } else if left == b'.' && !self.robot_visited.contains(&left_coords) {
+        } else if left == b'.' && self.layer_visited[left_coords.into()].is_none() {
             debug_println("move left".to_string());
-            self.robot_stack.push(self.robot_pos);
-            self.robot_visited.push(left_coords);
+            self.layer_visited[left_coords.into()] = Some(VisitedTile::Visited);
+            self.robot_stack_push(self.robot_pos);
             self.robot_turn_left();
             self.robot_step();
         } else {
             debug_println("backtrack".to_string());
             // backtrack
-            let back = match self.robot_stack.pop() {
+            let back = match self.robot_stack_pop() {
                 Some(it) => it,
                 None => {
                     self.reinit();
@@ -215,18 +255,9 @@ impl Widget for &mut App {
             .direction(ratatui::layout::Direction::Horizontal)
             .constraints(vec![Constraint::Ratio(1, 3), Constraint::Ratio(2, 3)])
             .split(area);
-
-        for pos in &self.robot_visited {
-            *self.map.get_mut(pos.x as u16, pos.y as u16).unwrap() = MyTile::Visited;
-        }
-        for pos in &self.robot_stack {
-            *self.map.get_mut(pos.x as u16, pos.y as u16).unwrap() = MyTile::Stack;
-        }
-        *self
-            .map
-            .get_mut(self.robot_pos.x as u16, self.robot_pos.y as u16)
-            .unwrap() = MyTile::Robot;
-        self.map.render(layout[1], buf);
+        self.layer_bg.render(layout[1], buf);
+        self.layer_visited.render(layout[1], buf);
+        self.layer_fg.render(layout[1], buf);
     }
 }
 
@@ -236,11 +267,12 @@ fn main() -> io::Result<()> {
     let mut terminal = ratatui::init();
     let mut app = App {
         exit: false,
-        map: TileMap::with_size(1, 1), // this gets reinit()ed anyways
+        layer_bg: TileMap::with_default(1, 1),
+        layer_visited: AlphaTileMap::empty(1, 1),
+        layer_fg: AlphaTileMap::empty(1, 1),
         robot_pos: Pos::new(1, 1),
         robot_dir: Direction::E,
         robot_stack: Vec::new(),
-        robot_visited: Vec::new(),
     };
     app.reinit();
     let app_result = app.run(&mut terminal);
@@ -282,6 +314,12 @@ impl Direction {
 struct Pos {
     x: usize,
     y: usize,
+}
+
+impl From<Pos> for (u16, u16) {
+    fn from(value: Pos) -> Self {
+        (value.x.try_into().unwrap(), value.y.try_into().unwrap())
+    }
 }
 
 impl Pos {
